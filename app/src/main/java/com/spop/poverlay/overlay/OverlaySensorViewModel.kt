@@ -515,7 +515,11 @@ class OverlaySensorViewModel(
         // Setup FTMS Server
         bleFtmsServerManager.onResistanceChanged = { resistance ->
             mutableBleResistance.tryEmit(resistance)
-
+            // Route raw resistance level from opcode 0x04 (e.g. from Rouvy) to the bike
+            if (mutablesimMode.value == false) {
+                mutablesimMode.value = true
+            }
+            sensorInterface.setResistance(resistance, context = getApplication())
         }
 
 
@@ -547,6 +551,11 @@ class OverlaySensorViewModel(
         super.onCleared()
         bleHeartRateManager.disconnect()
         bleFtmsServerManager.stopAdvertising()
+        bleServerManager.stopAdvertising()
+    }
+
+
+}
         bleServerManager.stopAdvertising()
     }
 
