@@ -2,7 +2,6 @@ name: Build APK
 
 on:
   push:
-
   workflow_dispatch:
 
 jobs:
@@ -18,7 +17,9 @@ jobs:
         with:
           java-version: 17
           distribution: temurin
-
+      - name: Make gradlew executable
+        run: chmod +x gradlew
+        
       - name: Build APK
         run: ./gradlew assembleDebug
 
