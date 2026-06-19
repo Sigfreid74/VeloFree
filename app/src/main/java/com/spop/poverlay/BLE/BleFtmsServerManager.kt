@@ -314,7 +314,6 @@ class BleFtmsServerManager(private val context: Context ) {
         override fun onConnectionStateChange(device: BluetoothDevice, status: Int, newState: Int) {
             if (newState == BluetoothProfile.STATE_CONNECTED) {
                 registeredDevices.add(device)
-				sendFitnessMachineStatus(0x04) // Initial Status
             } else if (newState == BluetoothProfile.STATE_DISCONNECTED) {
                 registeredDevices.remove(device)
             }
@@ -346,7 +345,7 @@ class BleFtmsServerManager(private val context: Context ) {
 					}
 
 					0x04.toByte() -> { // Resistance
-						if (value.size >= 2) {
+						if (value.size >= 3) {
 							val resistance = 
 							((value[2].toInt() and 0xFF) shl 8) or
 							(value[1].toInt() and 0xFF)
@@ -371,12 +370,12 @@ class BleFtmsServerManager(private val context: Context ) {
 
 					0x07.toByte() -> {
 						sendControlPointResponse(device, requestId, opCode, 0x01)
-						sendFitnessMachineStatus(0x04)
+						sendFitnessMachineStatus(0x04.toByte())
 					}
 
 					0x08.toByte() -> {
 						sendControlPointResponse(device, requestId, opCode, 0x01)
-						sendFitnessMachineStatus(0x02)
+						sendFitnessMachineStatus(0x02.toByte())
 					}
 
 					0x11.toByte() -> {
@@ -435,7 +434,7 @@ class BleFtmsServerManager(private val context: Context ) {
         }
 
         @SuppressLint("MissingPermission")
-        override fun onDescriptorWriteRequest(
+		override fun onDescriptorWriteRequest(
             device: BluetoothDevice,
             requestId: Int,
             descriptor: BluetoothGattDescriptor,
@@ -448,6 +447,9 @@ class BleFtmsServerManager(private val context: Context ) {
                 if (Arrays.equals(BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE, value) ||
                     Arrays.equals(BluetoothGattDescriptor.ENABLE_INDICATION_VALUE, value)) {
                     registeredDevices.add(device)
+                    if (descriptor.characteristic.uuid == FTMS_STATUS_UUID) {
+                        sendFitnessMachineStatus(0x04.toByte())
+                    }
                 }
             }
             if (responseNeeded) {
