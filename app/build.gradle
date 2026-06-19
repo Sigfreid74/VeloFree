@@ -3,6 +3,12 @@ plugins {
     id 'org.jetbrains.kotlin.android'
 }
 
+repositories {
+    flatDir {
+        dirs 'libs'
+    }
+}
+
 android {
     namespace 'com.spop.poverlay'
     compileSdk 33
@@ -78,8 +84,8 @@ dependencies {
     implementation "androidx.compose.ui:ui:$compose_version"
     implementation "androidx.compose.ui:ui-tooling-preview:$compose_version"
     implementation 'androidx.compose.material3:material3:1.1.0-alpha03'
-    implementation files('C:\\Users\\lou\\AndroidStudioProjects\\SharedLibs\\android-antplus-plugin-lib-release_3.9.0.aar')
-    implementation files('C:\\Users\\lou\\AndroidStudioProjects\\SharedLibs\\android_antlib_4-16-0.aar')
+    implementation files('libs/android-antplus-plugin-lib-release_3.9.0.aar')
+    implementation files('libs/android_antlib_4-16-0.aar')
 
 
     debugImplementation "androidx.compose.ui:ui-tooling:$compose_version"
