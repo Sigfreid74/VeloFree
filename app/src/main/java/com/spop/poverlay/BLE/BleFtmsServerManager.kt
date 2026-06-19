@@ -8,7 +8,6 @@ import android.bluetooth.le.AdvertiseSettings
 import android.bluetooth.le.BluetoothLeAdvertiser
 import android.content.Context
 import android.os.ParcelUuid
-import android.util.Arrays
 import android.util.Log
 import kotlinx.coroutines.flow.Flow
 import java.nio.ByteBuffer
@@ -294,8 +293,9 @@ class BleFtmsServerManager(private val context: Context) {
         override fun onDescriptorWriteRequest(device: BluetoothDevice, requestId: Int, descriptor: BluetoothGattDescriptor,
             preparedWrite: Boolean, responseNeeded: Boolean, offset: Int, value: ByteArray) {
             if (CLIENT_CHARACTERISTIC_CONFIG_UUID == descriptor.uuid) {
-                if (Arrays.equals(BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE, value) ||
-                    Arrays.equals(BluetoothGattDescriptor.ENABLE_INDICATION_VALUE, value)) {
+                val enableNotification = byteArrayOf(0x01, 0x00)
+                val enableIndication = byteArrayOf(0x02, 0x00)
+                if (value.contentEquals(enableNotification) || value.contentEquals(enableIndication)) {
                     registeredDevices.add(device)
                     if (descriptor.characteristic.uuid == FTMS_STATUS_UUID) {
                         sendFitnessMachineStatus(0x04)
