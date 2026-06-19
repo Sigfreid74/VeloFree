@@ -556,8 +556,3 @@ class OverlaySensorViewModel(
 
 
 }
-        bleServerManager.stopAdvertising()
-    }
-
-
-}
