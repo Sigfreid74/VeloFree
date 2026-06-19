@@ -233,16 +233,18 @@ class BleFtmsServerManager(private val context: Context ) {
 			BluetoothGattCharacteristic.PERMISSION_READ
 		)
 		feature.value = byteArrayOf(
-			0x1F,
+			0x43,  // bits 0,1,6 = Avg Speed, Cadence, Power Measurement supported
 			0x00,
-			0x0C,
+			0x0C,  // bits 2,3 of target settings = Resistance Level + Power targets supported
 			0x00
 		)
 
 		// Control Point
 		val controlPoint = BluetoothGattCharacteristic(
 			FTMS_CONTROL_POINT_UUID,
-			BluetoothGattCharacteristic.PROPERTY_WRITE or BluetoothGattCharacteristic.PROPERTY_INDICATE,
+			BluetoothGattCharacteristic.PROPERTY_WRITE or
+			BluetoothGattCharacteristic.PROPERTY_WRITE_NO_RESPONSE or
+			BluetoothGattCharacteristic.PROPERTY_INDICATE,
 			BluetoothGattCharacteristic.PERMISSION_WRITE
 		)
 		controlPoint.addDescriptor(BluetoothGattDescriptor(
@@ -405,7 +407,9 @@ class BleFtmsServerManager(private val context: Context ) {
 					}
 				}
                 }
+            return  // control point write fully handled above; do not also send an ATT response
             }
+            // For any non-control-point characteristic writes, send the ATT acknowledgement
             if (responseNeeded) {
                 bluetoothGattServer?.sendResponse(device, requestId, BluetoothGatt.GATT_SUCCESS, 0, null)
             }
@@ -431,6 +435,21 @@ class BleFtmsServerManager(private val context: Context ) {
             // Response format: 0x80, Request Op Code, Result Code
             characteristic.value = byteArrayOf(0x80.toByte(), opCode, result)
             bluetoothGattServer?.notifyCharacteristicChanged(device, characteristic, true)
+        }
+
+        @SuppressLint("MissingPermission")
+        override fun onDescriptorReadRequest(
+            device: BluetoothDevice,
+            requestId: Int,
+            offset: Int,
+            descriptor: BluetoothGattDescriptor
+        ) {
+            // Some clients (e.g. Golden Cheetah) read the CCCD before writing it.
+            // Without this handler Android returns an error, which can abort the connection.
+            bluetoothGattServer?.sendResponse(
+                device, requestId, BluetoothGatt.GATT_SUCCESS, offset,
+                BluetoothGattDescriptor.DISABLE_NOTIFICATION_VALUE
+            )
         }
 
         @SuppressLint("MissingPermission")
