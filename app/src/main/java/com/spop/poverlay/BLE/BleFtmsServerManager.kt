@@ -233,7 +233,7 @@ class BleFtmsServerManager(private val context: Context ) {
 			BluetoothGattCharacteristic.PERMISSION_READ
 		)
 		feature.value = byteArrayOf(
-			0x33,
+			0x1F,
 			0x00,
 			0x0C,
 			0x00
