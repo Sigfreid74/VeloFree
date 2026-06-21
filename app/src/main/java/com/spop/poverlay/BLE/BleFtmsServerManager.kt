@@ -82,24 +82,24 @@ class BleFtmsServerManager(private val context: Context) {
         val characteristic = bluetoothGattServer?.getService(FTMS_SERVICE_UUID)
             ?.getCharacteristic(INDOOR_BIKE_DATA_UUID) ?: return
 
-        // Stable flags: Instant Speed + Instant Cadence + Instant Power
-        val flags = 0x0044   // Bit 2 (Cadence) + Bit 6 (Power)  [Speed is implied when More Data = 0]
+        // More complete flags — better for Golden Cheetah
+        val flags = 0x0047   // Instant Speed + Cadence + Power
 
         val data = mutableListOf<Byte>()
         data.add((flags and 0xFF).toByte())
         data.add(((flags shr 8) and 0xFF).toByte())
 
-        // Instantaneous Speed (0.01 km/h)
+        // Speed
         val speedVal = (lastSpeed * 100).toInt()
         data.add((speedVal and 0xFF).toByte())
         data.add(((speedVal shr 8) and 0xFF).toByte())
 
-        // Instantaneous Cadence (0.5 rpm)
+        // Cadence
         val cadenceVal = (lastCadence * 2).toInt()
         data.add((cadenceVal and 0xFF).toByte())
         data.add(((cadenceVal shr 8) and 0xFF).toByte())
 
-        // Instantaneous Power (sint16)
+        // Power
         data.add((lastPower and 0xFF).toByte())
         data.add(((lastPower shr 8) and 0xFF).toByte())
 
@@ -250,6 +250,8 @@ class BleFtmsServerManager(private val context: Context) {
                             Log.d("BleFtms", "Gradient received: $grade%")
                             onControlPointChanged?.invoke(ControlPointData(grade.toDouble(), 0.0, 0.0, 0.0))
                             sendControlPointResponse(device, requestId, opCode, 0x01)
+                        } else {
+                            sendControlPointResponse(device, requestId, opCode, 0x03)
                         }
                     }
                     else -> sendControlPointResponse(device, requestId, opCode, 0x02)
@@ -290,8 +292,8 @@ class BleFtmsServerManager(private val context: Context) {
         override fun onDescriptorWriteRequest(device: BluetoothDevice, requestId: Int, descriptor: BluetoothGattDescriptor,
             preparedWrite: Boolean, responseNeeded: Boolean, offset: Int, value: ByteArray) {
             if (CLIENT_CHARACTERISTIC_CONFIG_UUID == descriptor.uuid) {
-                if (value.contentEquals(BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE) ||
-                    value.contentEquals(BluetoothGattDescriptor.ENABLE_INDICATION_VALUE)) {
+                if (value.contentEquals(byteArrayOf(0x01, 0x00)) ||
+                    value.contentEquals(byteArrayOf(0x02, 0x00))) {
                     registeredDevices.add(device)
                     if (descriptor.characteristic.uuid == FTMS_STATUS_UUID) {
                         sendFitnessMachineStatus(0x04)
