@@ -82,24 +82,27 @@ class BleFtmsServerManager(private val context: Context) {
         val characteristic = bluetoothGattServer?.getService(FTMS_SERVICE_UUID)
             ?.getCharacteristic(INDOOR_BIKE_DATA_UUID) ?: return
 
-        // More complete flags — better for Golden Cheetah
-        val flags = 0x0047   // Instant Speed + Cadence + Power
+        // Correct flags for GC compatibility:
+        // Bit 0 = 0 → Instant Speed Present
+        // Bit 2 = 1 → Instant Cadence Present
+        // Bit 6 = 1 → Instant Power Present
+        val flags = 0x0045
 
         val data = mutableListOf<Byte>()
         data.add((flags and 0xFF).toByte())
         data.add(((flags shr 8) and 0xFF).toByte())
 
-        // Speed
+        // Instantaneous Speed (0.01 km/h)
         val speedVal = (lastSpeed * 100).toInt()
         data.add((speedVal and 0xFF).toByte())
         data.add(((speedVal shr 8) and 0xFF).toByte())
 
-        // Cadence
+        // Instantaneous Cadence (0.5 rpm)
         val cadenceVal = (lastCadence * 2).toInt()
         data.add((cadenceVal and 0xFF).toByte())
         data.add(((cadenceVal shr 8) and 0xFF).toByte())
 
-        // Power
+        // Instantaneous Power (sint16)
         data.add((lastPower and 0xFF).toByte())
         data.add(((lastPower shr 8) and 0xFF).toByte())
 
