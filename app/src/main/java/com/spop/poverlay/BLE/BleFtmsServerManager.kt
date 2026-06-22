@@ -154,7 +154,7 @@ class BleFtmsServerManager(private val context: Context) {
             BluetoothGattCharacteristic.PROPERTY_READ,
             BluetoothGattCharacteristic.PERMISSION_READ
         ).apply {
-            value = byteArrayOf(0x8A.toByte(), 0x40, 0x0C, 0x00)
+            value = byteArrayOf(0x33, 0x00, 0x0C, 0x00)
         }
 
         val controlPoint = BluetoothGattCharacteristic(
@@ -290,6 +290,19 @@ class BleFtmsServerManager(private val context: Context) {
         override fun onDescriptorWriteRequest(device: BluetoothDevice, requestId: Int, descriptor: BluetoothGattDescriptor,
             preparedWrite: Boolean, responseNeeded: Boolean, offset: Int, value: ByteArray) {
             if (CLIENT_CHARACTERISTIC_CONFIG_UUID == descriptor.uuid) {
+                val charName = when (descriptor.characteristic.uuid) {
+                    INDOOR_BIKE_DATA_UUID      -> "IndoorBikeData"
+                    FTMS_CONTROL_POINT_UUID    -> "ControlPoint"
+                    FTMS_STATUS_UUID           -> "FtmsStatus"
+                    else                       -> descriptor.characteristic.uuid.toString()
+                }
+                val action = when {
+                    value.contentEquals(BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE)  -> "NOTIFY_ENABLED"
+                    value.contentEquals(BluetoothGattDescriptor.ENABLE_INDICATION_VALUE)    -> "INDICATE_ENABLED"
+                    value.contentEquals(BluetoothGattDescriptor.DISABLE_NOTIFICATION_VALUE) -> "DISABLED"
+                    else -> value.joinToString(":") { "%02X".format(it) }
+                }
+                Log.d("BleFtms", "CCCD $charName -> $action")
                 if (value.contentEquals(BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE) ||
                     value.contentEquals(BluetoothGattDescriptor.ENABLE_INDICATION_VALUE)) {
                     registeredDevices.add(device)
@@ -305,6 +318,14 @@ class BleFtmsServerManager(private val context: Context) {
 
         @SuppressLint("MissingPermission")
         override fun onCharacteristicReadRequest(device: BluetoothDevice, requestId: Int, offset: Int, characteristic: BluetoothGattCharacteristic) {
+            val name = when (characteristic.uuid) {
+                FTMS_FEATURE_UUID          -> "FtmsFeature"
+                FTMS_RESISTANCE_RANGE_UUID -> "ResistanceRange"
+                FTMS_POWER_RANGE_UUID      -> "PowerRange"
+                else                       -> characteristic.uuid.toString()
+            }
+            val hex = characteristic.value?.joinToString(":") { "%02X".format(it) } ?: "null"
+            Log.d("BleFtms", "READ $name offset=$offset value=[$hex]")
             bluetoothGattServer?.sendResponse(device, requestId, BluetoothGatt.GATT_SUCCESS, offset, characteristic.value)
         }
     }
