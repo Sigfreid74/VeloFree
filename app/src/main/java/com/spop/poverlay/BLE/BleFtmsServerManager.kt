@@ -161,6 +161,7 @@ class BleFtmsServerManager(private val context: Context) {
             FTMS_CONTROL_POINT_UUID,
             BluetoothGattCharacteristic.PROPERTY_WRITE or
                     BluetoothGattCharacteristic.PROPERTY_WRITE_NO_RESPONSE or
+                    BluetoothGattCharacteristic.PROPERTY_NOTIFY or
                     BluetoothGattCharacteristic.PROPERTY_INDICATE,
             BluetoothGattCharacteristic.PERMISSION_WRITE
         ).apply {
@@ -277,7 +278,8 @@ class BleFtmsServerManager(private val context: Context) {
             val char = bluetoothGattServer?.getService(FTMS_SERVICE_UUID)
                 ?.getCharacteristic(FTMS_CONTROL_POINT_UUID) ?: return
             char.value = byteArrayOf(0x80.toByte(), opCode, result)
-            bluetoothGattServer?.notifyCharacteristicChanged(device, char, true)
+            // Use notify (false) not indicate (true) - GC subscribes via NOTIFY not INDICATE
+            bluetoothGattServer?.notifyCharacteristicChanged(device, char, false)
         }
 
         @SuppressLint("MissingPermission")
