@@ -154,7 +154,7 @@ class BleFtmsServerManager(private val context: Context) {
             BluetoothGattCharacteristic.PROPERTY_READ,
             BluetoothGattCharacteristic.PERMISSION_READ
         ).apply {
-            value = byteArrayOf(0x33, 0x00, 0x0C, 0x00)
+            value = byteArrayOf(0x8A.toByte(), 0x40, 0x0C, 0x00)
         }
 
         val controlPoint = BluetoothGattCharacteristic(
