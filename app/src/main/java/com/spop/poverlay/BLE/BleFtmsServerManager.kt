@@ -227,6 +227,7 @@ class BleFtmsServerManager(private val context: Context) {
             device: BluetoothDevice, requestId: Int, characteristic: BluetoothGattCharacteristic,
             preparedWrite: Boolean, responseNeeded: Boolean, offset: Int, value: ByteArray
         ) {
+            Log.d("BleFtms", "WRITE uuid=${characteristic.uuid} responseNeeded=$responseNeeded bytes=${value.joinToString(":") { "%02X".format(it) }}")
             if (characteristic.uuid == FTMS_CONTROL_POINT_UUID && value.isNotEmpty()) {
                 val opCode = value[0]
                 Log.d("BleFtms", "Control Point Opcode: 0x${opCode.toString(16)}")
