@@ -82,24 +82,24 @@ class BleFtmsServerManager(private val context: Context) {
         val characteristic = bluetoothGattServer?.getService(FTMS_SERVICE_UUID)
             ?.getCharacteristic(INDOOR_BIKE_DATA_UUID) ?: return
 
-        // Stable flags for GC + Zwift: Speed present + Cadence + Power
-        val flags = 0x0045
+        // Stable flags: Instant Speed + Instant Cadence + Instant Power
+        val flags = 0x0044   // Bit 2 (Cadence) + Bit 6 (Power)  [Speed is implied when More Data = 0]
 
         val data = mutableListOf<Byte>()
         data.add((flags and 0xFF).toByte())
         data.add(((flags shr 8) and 0xFF).toByte())
 
-        // Speed (0.01 km/h)
+        // Instantaneous Speed (0.01 km/h)
         val speedVal = (lastSpeed * 100).toInt()
         data.add((speedVal and 0xFF).toByte())
         data.add(((speedVal shr 8) and 0xFF).toByte())
 
-        // Cadence (0.5 rpm)
+        // Instantaneous Cadence (0.5 rpm)
         val cadenceVal = (lastCadence * 2).toInt()
         data.add((cadenceVal and 0xFF).toByte())
         data.add(((cadenceVal shr 8) and 0xFF).toByte())
 
-        // Power (sint16)
+        // Instantaneous Power (sint16)
         data.add((lastPower and 0xFF).toByte())
         data.add(((lastPower shr 8) and 0xFF).toByte())
 
