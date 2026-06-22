@@ -28,7 +28,6 @@ class BleFtmsServerManager(private val context: Context) {
     private var bluetoothLeAdvertiser: BluetoothLeAdvertiser? = null
     private var bluetoothGattServer: BluetoothGattServer? = null
     private val registeredDevices = mutableSetOf<BluetoothDevice>()
-    private var statusCharacteristicRef: BluetoothGattCharacteristic? = null
 
     private var lastPower = 0
     private var lastCadence = 0f
@@ -169,15 +168,10 @@ class BleFtmsServerManager(private val context: Context) {
                 BluetoothGattDescriptor.PERMISSION_READ or BluetoothGattDescriptor.PERMISSION_WRITE))
         }
 
-        val statusCharacteristic = BluetoothGattCharacteristic(
-            FTMS_STATUS_UUID,
-            BluetoothGattCharacteristic.PROPERTY_NOTIFY,
-            BluetoothGattCharacteristic.PERMISSION_READ
-        ).apply {
-            addDescriptor(BluetoothGattDescriptor(CLIENT_CHARACTERISTIC_CONFIG_UUID,
-                BluetoothGattDescriptor.PERMISSION_READ or BluetoothGattDescriptor.PERMISSION_WRITE))
-        }
-        statusCharacteristicRef = statusCharacteristic
+        // FTMS Status characteristic omitted intentionally:
+        // GC attempts to subscribe to it but the descriptor write fails with a
+        // RemoteHostClosedError that drops the entire connection before 0x11 arrives.
+        // Zwift and FulGaz do not require it either.
 
         val resistanceRange = BluetoothGattCharacteristic(
             FTMS_RESISTANCE_RANGE_UUID,
@@ -194,7 +188,6 @@ class BleFtmsServerManager(private val context: Context) {
         service.addCharacteristic(bikeData)
         service.addCharacteristic(feature)
         service.addCharacteristic(controlPoint)
-        service.addCharacteristic(statusCharacteristic)
         service.addCharacteristic(resistanceRange)
         service.addCharacteristic(powerRange)
 
@@ -244,7 +237,6 @@ class BleFtmsServerManager(private val context: Context) {
                     0x05.toByte() -> sendControlPointResponse(device, requestId, opCode, 0x01)
                     0x07.toByte(), 0x08.toByte() -> {
                         sendControlPointResponse(device, requestId, opCode, 0x01)
-                        sendFitnessMachineStatus(if (opCode == 0x07.toByte()) 0x04 else 0x02)
                     }
                     0x11.toByte() -> {
                         if (value.size >= 7) {
@@ -261,16 +253,6 @@ class BleFtmsServerManager(private val context: Context) {
 
             if (responseNeeded) {
                 bluetoothGattServer?.sendResponse(device, requestId, BluetoothGatt.GATT_SUCCESS, 0, null)
-            }
-        }
-
-        @SuppressLint("MissingPermission")
-        private fun sendFitnessMachineStatus(status: Byte) {
-            statusCharacteristicRef?.let { char ->
-                char.value = byteArrayOf(status)
-                registeredDevices.forEach { device ->
-                    bluetoothGattServer?.notifyCharacteristicChanged(device, char, false)
-                }
             }
         }
 
@@ -309,9 +291,6 @@ class BleFtmsServerManager(private val context: Context) {
                 if (value.contentEquals(BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE) ||
                     value.contentEquals(BluetoothGattDescriptor.ENABLE_INDICATION_VALUE)) {
                     registeredDevices.add(device)
-                    if (descriptor.characteristic.uuid == FTMS_STATUS_UUID) {
-                        sendFitnessMachineStatus(0x04)
-                    }
                 }
             }
             if (responseNeeded) {
