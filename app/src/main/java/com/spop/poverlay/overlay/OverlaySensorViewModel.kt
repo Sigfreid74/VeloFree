@@ -513,26 +513,29 @@ class OverlaySensorViewModel(
         }
 
         // Setup FTMS Server
+        // Both callbacks fire on the GATT callback thread. All Android UI/sensor API calls
+        // must run on the main thread, so we dispatch onto viewModelScope (main dispatcher).
         bleFtmsServerManager.onResistanceChanged = { resistance ->
             mutableBleResistance.tryEmit(resistance)
-            // Route raw resistance level from opcode 0x04 (e.g. from Rouvy) to the bike
-            if (mutablesimMode.value == false) {
-                mutablesimMode.value = true
+            viewModelScope.launch {
+                // Route raw resistance level from opcode 0x04 (e.g. from Rouvy) to the bike
+                if (!mutablesimMode.value) {
+                    mutablesimMode.value = true
+                }
+                sensorInterface.setResistance(resistance, context = getApplication())
             }
-            sensorInterface.setResistance(resistance, context = getApplication())
         }
-
 
         var initialSimMode = false
         bleFtmsServerManager.onControlPointChanged = { controlPoint ->
-
-            if (initialSimMode == false) {
-                mutablesimMode.value = true
-                initialSimMode = true
+            viewModelScope.launch {
+                if (!initialSimMode) {
+                    mutablesimMode.value = true
+                    initialSimMode = true
+                }
+                simResistance.setGrade(controlPoint.grade)
+                grade.value = controlPoint.grade.toFloat()
             }
-            simResistance.setGrade(controlPoint.grade)
-            grade.value = controlPoint.grade.toFloat()
-
         }
 
         viewModelScope.launch {

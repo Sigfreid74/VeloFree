@@ -69,6 +69,7 @@ class SimResistance(
                 sensorInterface.setResistance(resistanceLevel.toInt(), context = context)
                 _lastResistance = resistanceLevel.toInt()
             } catch (e: Exception) {
+                Log.e("SimResistance", "setResistance($resistanceLevel) failed: ${e.message}", e)
             }
 
 
