@@ -28,6 +28,7 @@ class BleFtmsServerManager(private val context: Context) {
     private var bluetoothLeAdvertiser: BluetoothLeAdvertiser? = null
     private var bluetoothGattServer: BluetoothGattServer? = null
     private val registeredDevices = mutableSetOf<BluetoothDevice>()
+    private var statusCharacteristicRef: BluetoothGattCharacteristic? = null
 
     private var lastPower = 0
     private var lastCadence = 0f
@@ -81,24 +82,20 @@ class BleFtmsServerManager(private val context: Context) {
         val characteristic = bluetoothGattServer?.getService(FTMS_SERVICE_UUID)
             ?.getCharacteristic(INDOOR_BIKE_DATA_UUID) ?: return
 
-        // Stable flags: Instant Speed + Instant Cadence + Instant Power
-        val flags = 0x0044   // Bit 2 (Cadence) + Bit 6 (Power)  [Speed is implied when More Data = 0]
+        val flags = 0x0045  // Speed + Cadence + Power (stable for GC)
 
         val data = mutableListOf<Byte>()
         data.add((flags and 0xFF).toByte())
         data.add(((flags shr 8) and 0xFF).toByte())
 
-        // Instantaneous Speed (0.01 km/h)
         val speedVal = (lastSpeed * 100).toInt()
         data.add((speedVal and 0xFF).toByte())
         data.add(((speedVal shr 8) and 0xFF).toByte())
 
-        // Instantaneous Cadence (0.5 rpm)
         val cadenceVal = (lastCadence * 2).toInt()
         data.add((cadenceVal and 0xFF).toByte())
         data.add(((cadenceVal shr 8) and 0xFF).toByte())
 
-        // Instantaneous Power (sint16)
         data.add((lastPower and 0xFF).toByte())
         data.add(((lastPower shr 8) and 0xFF).toByte())
 
@@ -152,14 +149,12 @@ class BleFtmsServerManager(private val context: Context) {
             FTMS_FEATURE_UUID,
             BluetoothGattCharacteristic.PROPERTY_READ,
             BluetoothGattCharacteristic.PERMISSION_READ
-        ).apply {
-            value = byteArrayOf(0x33, 0x00, 0x0C, 0x00)
-        }
+        ).apply { value = byteArrayOf(0x33, 0x00, 0x0C, 0x00) }
 
         val controlPoint = BluetoothGattCharacteristic(
             FTMS_CONTROL_POINT_UUID,
             BluetoothGattCharacteristic.PROPERTY_WRITE or
-                    BluetoothGattCharacteristic.PROPERTY_NOTIFY or
+                    BluetoothGattCharacteristic.PROPERTY_WRITE_NO_RESPONSE or
                     BluetoothGattCharacteristic.PROPERTY_INDICATE,
             BluetoothGattCharacteristic.PERMISSION_WRITE
         ).apply {
@@ -167,10 +162,15 @@ class BleFtmsServerManager(private val context: Context) {
                 BluetoothGattDescriptor.PERMISSION_READ or BluetoothGattDescriptor.PERMISSION_WRITE))
         }
 
-        // FTMS Status characteristic omitted intentionally:
-        // GC attempts to subscribe to it but the descriptor write fails with a
-        // RemoteHostClosedError that drops the entire connection before 0x11 arrives.
-        // Zwift and FulGaz do not require it either.
+        val statusCharacteristic = BluetoothGattCharacteristic(
+            FTMS_STATUS_UUID,
+            BluetoothGattCharacteristic.PROPERTY_NOTIFY,
+            BluetoothGattCharacteristic.PERMISSION_READ
+        ).apply {
+            addDescriptor(BluetoothGattDescriptor(CLIENT_CHARACTERISTIC_CONFIG_UUID,
+                BluetoothGattDescriptor.PERMISSION_READ or BluetoothGattDescriptor.PERMISSION_WRITE))
+        }
+        statusCharacteristicRef = statusCharacteristic
 
         val resistanceRange = BluetoothGattCharacteristic(
             FTMS_RESISTANCE_RANGE_UUID,
@@ -187,6 +187,7 @@ class BleFtmsServerManager(private val context: Context) {
         service.addCharacteristic(bikeData)
         service.addCharacteristic(feature)
         service.addCharacteristic(controlPoint)
+        service.addCharacteristic(statusCharacteristic)
         service.addCharacteristic(resistanceRange)
         service.addCharacteristic(powerRange)
 
@@ -210,6 +211,7 @@ class BleFtmsServerManager(private val context: Context) {
                 Log.d("BleFtms", "Device connected: ${device.name ?: device.address}")
             } else if (newState == BluetoothProfile.STATE_DISCONNECTED) {
                 registeredDevices.remove(device)
+                Log.d("BleFtms", "Device disconnected")
             }
             onConnectionStateChanged?.invoke(registeredDevices.size)
         }
@@ -219,10 +221,9 @@ class BleFtmsServerManager(private val context: Context) {
             device: BluetoothDevice, requestId: Int, characteristic: BluetoothGattCharacteristic,
             preparedWrite: Boolean, responseNeeded: Boolean, offset: Int, value: ByteArray
         ) {
-            Log.d("BleFtms", "WRITE uuid=${characteristic.uuid} responseNeeded=$responseNeeded bytes=${value.joinToString(":") { "%02X".format(it) }}")
             if (characteristic.uuid == FTMS_CONTROL_POINT_UUID && value.isNotEmpty()) {
                 val opCode = value[0]
-                Log.d("BleFtms", "Control Point Opcode: 0x${opCode.toString(16)}")
+                Log.d("BleFtms", "Control Point Opcode: 0x${opCode.toString(16)} | bytes=${value.joinToString(":") { "%02X".format(it) }}")
 
                 when (opCode) {
                     0x00.toByte(), 0x01.toByte() -> sendControlPointResponse(device, requestId, opCode, 0x01)
@@ -236,13 +237,16 @@ class BleFtmsServerManager(private val context: Context) {
                     0x05.toByte() -> sendControlPointResponse(device, requestId, opCode, 0x01)
                     0x07.toByte(), 0x08.toByte() -> {
                         sendControlPointResponse(device, requestId, opCode, 0x01)
+                        sendFitnessMachineStatus(if (opCode == 0x07.toByte()) 0x04 else 0x02)
                     }
                     0x11.toByte() -> {
                         if (value.size >= 7) {
                             val grade = ByteBuffer.wrap(value, 3, 2).order(ByteOrder.LITTLE_ENDIAN).short * 0.01
-                            Log.d("BleFtms", "Gradient received: $grade%")
+                            Log.d("BleFtms", "✅ Gradient received: $grade%")
                             onControlPointChanged?.invoke(ControlPointData(grade.toDouble(), 0.0, 0.0, 0.0))
                             sendControlPointResponse(device, requestId, opCode, 0x01)
+                        } else {
+                            sendControlPointResponse(device, requestId, opCode, 0x03)
                         }
                     }
                     else -> sendControlPointResponse(device, requestId, opCode, 0x02)
@@ -256,12 +260,21 @@ class BleFtmsServerManager(private val context: Context) {
         }
 
         @SuppressLint("MissingPermission")
+        private fun sendFitnessMachineStatus(status: Byte) {
+            statusCharacteristicRef?.let { char ->
+                char.value = byteArrayOf(status)
+                registeredDevices.forEach { device ->
+                    bluetoothGattServer?.notifyCharacteristicChanged(device, char, false)
+                }
+            }
+        }
+
+        @SuppressLint("MissingPermission")
         private fun sendControlPointResponse(device: BluetoothDevice, requestId: Int, opCode: Byte, result: Byte) {
             val char = bluetoothGattServer?.getService(FTMS_SERVICE_UUID)
                 ?.getCharacteristic(FTMS_CONTROL_POINT_UUID) ?: return
             char.value = byteArrayOf(0x80.toByte(), opCode, result)
-            // Use notify (false) not indicate (true) - GC subscribes via NOTIFY not INDICATE
-            bluetoothGattServer?.notifyCharacteristicChanged(device, char, false)
+            bluetoothGattServer?.notifyCharacteristicChanged(device, char, true)  // Use INDICATE for Control Point responses
         }
 
         @SuppressLint("MissingPermission")
@@ -274,21 +287,10 @@ class BleFtmsServerManager(private val context: Context) {
         override fun onDescriptorWriteRequest(device: BluetoothDevice, requestId: Int, descriptor: BluetoothGattDescriptor,
             preparedWrite: Boolean, responseNeeded: Boolean, offset: Int, value: ByteArray) {
             if (CLIENT_CHARACTERISTIC_CONFIG_UUID == descriptor.uuid) {
-                val charName = when (descriptor.characteristic.uuid) {
-                    INDOOR_BIKE_DATA_UUID      -> "IndoorBikeData"
-                    FTMS_CONTROL_POINT_UUID    -> "ControlPoint"
-                    FTMS_STATUS_UUID           -> "FtmsStatus"
-                    else                       -> descriptor.characteristic.uuid.toString()
-                }
-                val action = when {
-                    value.contentEquals(BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE)  -> "NOTIFY_ENABLED"
-                    value.contentEquals(BluetoothGattDescriptor.ENABLE_INDICATION_VALUE)    -> "INDICATE_ENABLED"
-                    value.contentEquals(BluetoothGattDescriptor.DISABLE_NOTIFICATION_VALUE) -> "DISABLED"
-                    else -> value.joinToString(":") { "%02X".format(it) }
-                }
-                Log.d("BleFtms", "CCCD $charName -> $action")
-                if (value.contentEquals(BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE) ||
-                    value.contentEquals(BluetoothGattDescriptor.ENABLE_INDICATION_VALUE)) {
+                val enabled = value.contentEquals(BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE) ||
+                              value.contentEquals(BluetoothGattDescriptor.ENABLE_INDICATION_VALUE)
+                Log.d("BleFtms", "CCCD ${descriptor.characteristic.uuid} -> ${if (enabled) "ENABLED" else "DISABLED"}")
+                if (enabled) {
                     registeredDevices.add(device)
                 }
             }
@@ -299,14 +301,6 @@ class BleFtmsServerManager(private val context: Context) {
 
         @SuppressLint("MissingPermission")
         override fun onCharacteristicReadRequest(device: BluetoothDevice, requestId: Int, offset: Int, characteristic: BluetoothGattCharacteristic) {
-            val name = when (characteristic.uuid) {
-                FTMS_FEATURE_UUID          -> "FtmsFeature"
-                FTMS_RESISTANCE_RANGE_UUID -> "ResistanceRange"
-                FTMS_POWER_RANGE_UUID      -> "PowerRange"
-                else                       -> characteristic.uuid.toString()
-            }
-            val hex = characteristic.value?.joinToString(":") { "%02X".format(it) } ?: "null"
-            Log.d("BleFtms", "READ $name offset=$offset value=[$hex]")
             bluetoothGattServer?.sendResponse(device, requestId, BluetoothGatt.GATT_SUCCESS, offset, characteristic.value)
         }
     }
