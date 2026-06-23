@@ -158,7 +158,7 @@ class BleFtmsServerManager(private val context: Context) {
 
         val controlPoint = BluetoothGattCharacteristic(
             FTMS_CONTROL_POINT_UUID,
-            BluetoothGattCharacteristic.PROPERTY_WRITE_NO_RESPONSE or
+            BluetoothGattCharacteristic.PROPERTY_WRITE or
                     BluetoothGattCharacteristic.PROPERTY_NOTIFY or
                     BluetoothGattCharacteristic.PROPERTY_INDICATE,
             BluetoothGattCharacteristic.PERMISSION_WRITE
